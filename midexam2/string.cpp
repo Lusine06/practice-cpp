@@ -1,17 +1,21 @@
 #include <iostream>
 #include <cstring>
+#include <utility>
 
 class String
 {
 private:
-    char small_buffer[23];
-    char *heap_data;
+    union 
+    {
+        char small_buffer[23];
+        char *heap_data;
+    };
     size_t string_size;
     size_t string_capacity;
     bool is_small;
 
 public:
-    String() : small_buffer(), heap_data(nullptr), string_size(0), string_capacity(22), is_small(true) {}
+    String() : small_buffer(), string_size(0), string_capacity(22), is_small(true) {}
 
     ~String()
     {
@@ -21,7 +25,7 @@ public:
         }
     }
     String(const char *str)
-        : small_buffer(), heap_data(nullptr),
+        : small_buffer(),
           string_size(0), string_capacity(22), is_small(true)
     {
         if (str == nullptr)
@@ -32,16 +36,16 @@ public:
         if (length <= 22)
         {
             string_size = length;
-            strcpy(small_buffer, str);
+            memcpy(small_buffer, str, length + 1);
         }
-       else
+        else
         {
             is_small = false;
             string_size = length;
-            string_capacity = length * 2; 
+            string_capacity = length * 2;
 
             heap_data = new char[string_capacity + 1];
-            strcpy(heap_data, str);
+            memcpy(heap_data, str, length + 1);
         }
     }
     size_t size() const
@@ -54,19 +58,19 @@ public:
     }
 
     String(const String &other)
-        : small_buffer(), heap_data(nullptr),
+        : small_buffer(),
           string_size(other.string_size),
           string_capacity(other.string_capacity),
           is_small(other.is_small)
     {
         if (other.is_small)
         {
-            strcpy(small_buffer, other.small_buffer);
+            memcpy(small_buffer, other.small_buffer, other.string_size + 1);
         }
         else
         {
             heap_data = new char[string_capacity + 1];
-            strcpy(heap_data, other.heap_data);
+            memcpy(heap_data, other.heap_data, other.string_size + 1);
         }
     }
     char &operator[](size_t index)
@@ -91,23 +95,22 @@ public:
 
         if (is_small && other.is_small) // small -> small
         {
-            strcpy(small_buffer, other.small_buffer);
+            memcpy(small_buffer, other.small_buffer, other.string_size + 1);
             string_size = other.string_size;
         }
         else if (is_small && !other.is_small) // small -> large
         {
             char *ptr = new char[other.string_capacity + 1];
-            strcpy(ptr, other.heap_data);
-            heap_data = ptr;
+            memcpy(ptr, other.heap_data, other.string_size + 1);
+            heap_data = ptr; 
             string_size = other.string_size;
             string_capacity = other.string_capacity;
             is_small = false;
         }
         else if (!is_small && other.is_small) // large -> small
         {
-            delete[] heap_data;
-            heap_data = nullptr;
-            strcpy(small_buffer, other.small_buffer);
+            delete[] heap_data; 
+            memcpy(small_buffer, other.small_buffer, other.string_size + 1);
             string_size = other.string_size;
             string_capacity = 22;
             is_small = true;
@@ -116,13 +119,13 @@ public:
         {
             if (string_capacity >= other.string_size)
             {
-                strcpy(heap_data, other.heap_data);
+                memcpy(heap_data, other.heap_data, other.string_size + 1);
                 string_size = other.string_size;
             }
             else if (string_capacity < other.string_size)
             {
                 char *ptr = new char[other.string_capacity + 1];
-                strcpy(ptr, other.heap_data);
+                memcpy(ptr, other.heap_data, other.string_size + 1);
                 delete[] heap_data;
                 heap_data = ptr;
                 string_size = other.string_size;
@@ -131,11 +134,13 @@ public:
         }
         return *this;
     }
-    String(String &&other) /// exmp. String str1("looooong text"); String str2 = std::move(str1);
-    {                      /// other = str1; this = str2
+    String(String &&other) noexcept
+        : small_buffer(), string_size(0), string_capacity(22), is_small(true)
+    {                      /// exmp. String str1("looooong text"); String str2 = std::move(str1);
+                           /// other = str1; this = str2
         if (other.is_small)
         {
-            strcpy(small_buffer, other.small_buffer);
+            memcpy(small_buffer, other.small_buffer, other.string_size + 1);
             string_size = other.string_size;
             string_capacity = 22;
             is_small = true;
@@ -155,7 +160,7 @@ public:
         other.is_small = true;
         other.small_buffer[0] = '\0';
     }
-    String &operator=(String &&other)
+    String &operator=(String &&other) noexcept
     {
         if (this == &other)
             return *this;
@@ -165,7 +170,7 @@ public:
 
         if (other.is_small)
         {
-            strcpy(small_buffer, other.small_buffer);
+            memcpy(small_buffer, other.small_buffer, other.string_size + 1);
         }
         else
         {
@@ -216,14 +221,14 @@ public:
         char *p = new char[next_cap + 1];
 
         if (is_small)
-            strcpy(p, small_buffer);
+            memcpy(p, small_buffer, string_size + 1);
         else
-            strcpy(p, heap_data);
+            memcpy(p, heap_data, string_size + 1);
 
         if (!is_small)
             delete[] heap_data;
 
-        heap_data = p;
+        heap_data = p; 
         is_small = false;
         string_capacity = next_cap;
     }
@@ -367,7 +372,7 @@ public:
         if (this->string_size != other.string_size)
             return false;
 
-        if (strcmp(this->c_str(), other.c_str()) == 0)
+        if (memcmp(this->c_str(), other.c_str(), string_size) == 0)
             return true;
 
         return false;
@@ -456,15 +461,17 @@ int main()
     s_moved.print();
     std::cout << "moved size: " << s_moved.size() << ", capacity: " << s_moved.capacity() << "\n";
 
-    std::cout << "source after move -> empty: " << s_short.empty()
+    std::cout << "After move: " << s_short.empty()
               << ", size: " << s_short.size()
               << ", capacity: " << s_short.capacity() << "\n";
 
     s_moved.clear();
     s_moved.push_back('A');
-    std::cout << "after clear + push_back('A'): ";
+    std::cout << "After push: ";
     s_moved.print();
     std::cout << "size: " << s_moved.size() << ", capacity: " << s_moved.capacity() << "\n";
+
+    std::cout << "sizeof(String) = " << sizeof(String) << "\n";
 
     return 0;
 }
